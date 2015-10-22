@@ -1,23 +1,22 @@
-﻿//-----------------------------------------------------------------------
-// <copyright file="HTU21D.cs" company="Microsoft">
-//     Copyright (c) Microsoft Corporation.  All rights reserved.
-// </copyright>
-//-----------------------------------------------------------------------
-namespace Microsoft.Maker.Devices.I2C.HTU21DDevice
-{
-    using System;
-    using System.Threading.Tasks;
-    using Windows.Devices.Enumeration;
-    using Windows.Devices.Gpio;
-    using Windows.Devices.I2c;
-    using Windows.Foundation;
+﻿using System;
+using System.Threading.Tasks;
+using Windows.Devices.Enumeration;
+using Windows.Devices.I2c;
+using Windows.Foundation;
 
+namespace Microsoft.Maker.Devices.I2C.Htu21d
+{
     /// <summary>
     /// HTU21D Digital Relative Humidity sensor with Temperature IC
     /// http://cdn.sparkfun.com/datasheets/BreakoutBoards/HTU21D.pdf
     /// </summary>
-    public sealed class HTU21D
+    public sealed class Htu21d
     {
+        /// <summary>
+        /// Device I2C Bus
+        /// </summary>
+        private string i2cBusName;
+
         /// <summary>
         /// Device I2C Address
         /// </summary>
@@ -36,7 +35,7 @@ namespace Microsoft.Maker.Devices.I2C.HTU21DDevice
         /// <summary>
         /// Used to signal that the device is properly initialized and ready to use
         /// </summary>
-        private bool enable = false;
+        private bool available = false;
 
         /// <summary>
         /// I2C Device
@@ -44,57 +43,35 @@ namespace Microsoft.Maker.Devices.I2C.HTU21DDevice
         private I2cDevice i2c;
 
         /// <summary>
-        /// Gets the relative humidity value.
+        /// Constructs Htu21d with I2C bus identified
         /// </summary>
-        /// <returns>
-        /// The relative humidity
-        /// </returns>
-        public float Humidity
+        /// <param name="i2cBusName">
+        /// The bus name to provide to the enumerator
+        /// </param>
+        public Htu21d (string i2cBusName)
         {
-            get
-            {
-                if (!this.enable)
-                {
-                    return 0f;
-                }
-
-                ushort rawHumidityData = this.RawHumidity;
-                double humidityRelative = ((125.0 * rawHumidityData) / 65536) - 6.0;
-
-                return Convert.ToSingle(humidityRelative);
-            }
+            this.i2cBusName = i2cBusName;
         }
 
         /// <summary>
-        /// Gets the current temperature
+        /// Initialize the temerature device.
         /// </summary>
         /// <returns>
-        /// The temperature in Celcius (C)
+        /// Async operation object.
         /// </returns>
-        public float Temperature
+        public IAsyncOperation<bool> BeginAsync()
         {
-            get
-            {
-                if (!this.enable)
-                {
-                    return 0f;
-                }
-
-                ushort rawTemperatureData = this.RawTemperature;
-                double temperatureCelsius = ((175.72 * rawTemperatureData) / 65536) - 46.85;
-
-                return Convert.ToSingle(temperatureCelsius);
-            }
+            return this.BeginAsyncHelper().AsAsyncOperation<bool>();
         }
 
         /// <summary>
-        /// Gets the dewpoint temperature
+        /// Calculates the dew point temperature
         /// </summary>
         public float DewPoint
         {
             get
             {
-                if (!this.enable)
+                if (!this.available)
                 {
                     return 0f;
                 }
@@ -119,9 +96,8 @@ namespace Microsoft.Maker.Devices.I2C.HTU21DDevice
                 paritalPressure = System.Math.Pow(10, paritalPressure);
 
                 // Dew point is calculated using the partial pressure, humidity and temperature.
-                // The datasheet on page 16 is doesn't say to use the temperature compensated
-                // RH value. It says "Ambient humidity in %RH, computed from HTU21D(F) sensor".
-                // Therefore, I am going to use the raw RH value straight from the sensor.
+                // The datasheet says "Ambient humidity in %RH, computed from HTU21D(F) sensor" on page 16 is doesn't say to use the temperature compensated
+                // RH value. Therefore, we use the raw RH value straight from the sensor.
                 // Dew point = -(C + B / (log(RH * PartialPress / 100) - A))
                 dewPoint = humidityRelative * paritalPressure / 100;
                 dewPoint = System.Math.Log10(dewPoint) - DewConstA;
@@ -130,6 +106,115 @@ namespace Microsoft.Maker.Devices.I2C.HTU21DDevice
 
                 return Convert.ToSingle(dewPoint);
             }
+        }
+
+        /// <summary>
+        /// Gets the relative humidity value.
+        /// </summary>
+        /// <returns>
+        /// The relative humidity
+        /// </returns>
+        public float Humidity
+        {
+            get
+            {
+                if (!this.available)
+                {
+                    return 0f;
+                }
+
+                ushort rawHumidityData = this.RawHumidity;
+                double humidityRelative = ((125.0 * rawHumidityData) / 65536) - 6.0;
+
+                return Convert.ToSingle(humidityRelative);
+            }
+        }
+
+        /// <summary>
+        /// Gets the current temperature
+        /// </summary>
+        /// <returns>
+        /// The temperature in Celcius (C)
+        /// </returns>
+        public float Temperature
+        {
+            get
+            {
+                if (!this.available)
+                {
+                    return 0f;
+                }
+
+                ushort rawTemperatureData = this.RawTemperature;
+                double temperatureCelsius = ((175.72 * rawTemperatureData) / 65536) - 46.85;
+
+                return Convert.ToSingle(temperatureCelsius);
+            }
+        }
+
+        /// <summary>
+        /// Private helper to initialize the HTU21D device.
+        /// </summary>
+        /// <remarks>
+        /// Setup and instantiate the I2C device object for the HTU21D.
+        /// </remarks>
+        /// <returns>
+        /// Task object.
+        /// </returns>
+        private async Task<bool> BeginAsyncHelper()
+        {
+            // Acquire the I2C device
+            // MSDN I2C Reference: https://msdn.microsoft.com/en-us/library/windows/apps/windows.devices.i2c.aspx
+            //
+            // Use the I2cDevice device selector to create an advanced query syntax string
+            // Use the Windows.Devices.Enumeration.DeviceInformation class to create a collection using the advanced query syntax string
+            // Take the device id of the first device in the collection
+            string advancedQuerySyntax = I2cDevice.GetDeviceSelector(i2cBusName);
+            DeviceInformationCollection deviceInformationCollection = await DeviceInformation.FindAllAsync(advancedQuerySyntax);
+            string deviceId = deviceInformationCollection[0].Id;
+
+            // Establish an I2C connection to the HTU21D
+            //
+            // Instantiate the I2cConnectionSettings using the device address of the HTU21D
+            // - Set the I2C bus speed of connection to fast mode
+            // - Set the I2C sharing mode of the connection to shared
+            //
+            // Instantiate the the HTU21D I2C device using the device id and the I2cConnectionSettings
+            I2cConnectionSettings htu21dConnection = new I2cConnectionSettings(Htu21d.Htu21dI2cAddress);
+            htu21dConnection.BusSpeed = I2cBusSpeed.FastMode;
+            htu21dConnection.SharingMode = I2cSharingMode.Shared;
+
+            this.i2c = await I2cDevice.FromIdAsync(deviceId, htu21dConnection);
+
+            // Test to see if the I2C devices are available.
+            //
+            // If the I2C devices are not available, this is
+            // a good indicator the weather shield is either
+            // missing or configured incorrectly. Therefore we
+            // will disable the weather shield functionality to
+            // handle the failure case gracefully. This allows
+            // the invoking application to remain deployable
+            // across the Universal Windows Platform.
+            if (null == this.i2c)
+            {
+                this.available = false;
+            }
+            else
+            {
+                byte[] i2cTemperatureData = new byte[3];
+
+                try
+                {
+                    this.i2c.WriteRead(new byte[] { Htu21d.SampleTemperatureHold }, i2cTemperatureData);
+                    this.available = true;
+                }
+                catch
+                {
+                    this.available = false;
+                }
+            }
+
+            return this.available;
         }
 
         /// <summary>
@@ -142,19 +227,19 @@ namespace Microsoft.Maker.Devices.I2C.HTU21DDevice
                 ushort humidity = 0;
                 byte[] i2cHumidityData = new byte[3];
 
-                // Request humidity data from the HTDU21D
-                // HTDU21D datasheet: http://dlnmh9ip6v2uc.cloudfront.net/datasheets/BreakoutBoards/HTU21D.pdf
+                // Request humidity data from the HTU21D
+                // HTU21D datasheet: http://dlnmh9ip6v2uc.cloudfront.net/datasheets/BreakoutBoards/HTU21D.pdf
                 //
-                // Write the SampleHumidityHold command (0xE5) to the HTDU21D
-                // - HOLD means it will block the I2C line while the HTDU21D calculates the humidity value
+                // Write the SampleHumidityHold command (0xE5) to the HTU21D
+                // - HOLD means it will block the I2C line while the HTU21D calculates the humidity value
                 //
-                // Read the three bytes returned by the HTDU21D
+                // Read the three bytes returned by the HTU21D
                 // - byte 0 - MSB of the humidity
                 // - byte 1 - LSB of the humidity
                 // - byte 2 - CRC
                 //
                 // NOTE: Holding the line allows for a `WriteRead` style transaction
-                this.i2c.WriteRead(new byte[] { HTU21D.SampleHumidityHold }, i2cHumidityData);
+                this.i2c.WriteRead(new byte[] { Htu21d.SampleHumidityHold }, i2cHumidityData);
 
                 // Reconstruct the result using the first two bytes returned from the device
                 //
@@ -171,14 +256,14 @@ namespace Microsoft.Maker.Devices.I2C.HTU21DDevice
                 // Ensure the data returned is humidity data (hint: byte 1, bit 1)
                 // Test cyclic redundancy check (CRC) byte
                 //
-                // WARNING: HTDU21D firmware error - XOR CRC byte with 0x62 before attempting to validate
+                // WARNING: HTU21D firmware error - XOR CRC byte with 0x62 before attempting to validate
                 bool humidityData = 0x00 != (0x02 & i2cHumidityData[1]);
                 if (!humidityData)
                 {
                     return 0;
                 }
 
-                bool validData = this.ValidHtdu21dCyclicRedundancyCheck(humidity, (byte)(i2cHumidityData[2] ^ 0x62));
+                bool validData = this.ValidCyclicRedundancyCheck(humidity, (byte)(i2cHumidityData[2] ^ 0x62));
                 if (!validData)
                 {
                     return 0;
@@ -198,19 +283,19 @@ namespace Microsoft.Maker.Devices.I2C.HTU21DDevice
                 ushort temperature = 0;
                 byte[] i2cTemperatureData = new byte[3];
 
-                // Request temperature data from the HTDU21D
-                // HTDU21D datasheet: http://dlnmh9ip6v2uc.cloudfront.net/datasheets/BreakoutBoards/HTU21D.pdf
+                // Request temperature data from the HTU21D
+                // HTU21D datasheet: http://dlnmh9ip6v2uc.cloudfront.net/datasheets/BreakoutBoards/HTU21D.pdf
                 //
-                // Write the SampleTemperatureHold command (0xE3) to the HTDU21D
-                // - HOLD means it will block the I2C line while the HTDU21D calculates the temperature value
+                // Write the SampleTemperatureHold command (0xE3) to the HTU21D
+                // - HOLD means it will block the I2C line while the HTU21D calculates the temperature value
                 //
-                // Read the three bytes returned by the HTDU21D
+                // Read the three bytes returned by the HTU21D
                 // - byte 0 - MSB of the temperature
                 // - byte 1 - LSB of the temperature
                 // - byte 2 - CRC
                 //
                 // NOTE: Holding the line allows for a `WriteRead` style transaction
-                this.i2c.WriteRead(new byte[] { HTU21D.SampleTemperatureHold }, i2cTemperatureData);
+                this.i2c.WriteRead(new byte[] { Htu21d.SampleTemperatureHold }, i2cTemperatureData);
 
                 // Reconstruct the result using the first two bytes returned from the device
                 //
@@ -232,7 +317,7 @@ namespace Microsoft.Maker.Devices.I2C.HTU21DDevice
                     return 0;
                 }
 
-                bool validData = this.ValidHtdu21dCyclicRedundancyCheck(temperature, i2cTemperatureData[2]);
+                bool validData = this.ValidCyclicRedundancyCheck(temperature, i2cTemperatureData[2]);
                 if (!validData)
                 {
                     return 0;
@@ -240,17 +325,6 @@ namespace Microsoft.Maker.Devices.I2C.HTU21DDevice
 
                 return temperature;
             }
-        }
-
-        /// <summary>
-        /// Initialize the temerature device.
-        /// </summary>
-        /// <returns>
-        /// Async operation object.
-        /// </returns>
-        public IAsyncOperation<bool> BeginAsync()
-        {
-            return this.BeginAsyncHelper().AsAsyncOperation<bool>();
         }
 
         /// <summary>
@@ -265,7 +339,7 @@ namespace Microsoft.Maker.Devices.I2C.HTU21DDevice
         /// <returns>
         /// Returns true for success; false otherwise.
         /// </returns>
-        private bool ValidHtdu21dCyclicRedundancyCheck(ushort data, byte crc)
+        private bool ValidCyclicRedundancyCheck(ushort data, byte crc)
         {
             // Validate the 8-bit cyclic redundancy check (CRC) byte
             // CRC: http://en.wikipedia.org/wiki/Cyclic_redundancy_check
@@ -287,93 +361,6 @@ namespace Microsoft.Maker.Devices.I2C.HTU21DDevice
             }
 
             return crc == crcData;
-        }
-
-        /// <summary>
-        /// Private helper to initialize the HTU21D device.
-        /// </summary>
-        /// <remarks>
-        /// Setup and instantiate the I2C device object for the HTU21D.
-        /// </remarks>
-        /// <returns>
-        /// Task object.
-        /// </returns>
-        private async Task<bool> BeginAsyncHelper()
-        {
-            // Acquire the GPIO controller
-            // MSDN GPIO Reference: https://msdn.microsoft.com/en-us/library/windows/apps/windows.devices.gpio.aspx
-            //
-            // Get the default GpioController
-            GpioController gpio = GpioController.GetDefault();
-
-            // Test to see if the GPIO controller is available.
-            //
-            // If the GPIO controller is not available, this is
-            // a good indicator the app has been deployed to a
-            // computing environment that is not capable of
-            // controlling the weather shield. Therefore we
-            // will disable the weather shield functionality to
-            // handle the failure case gracefully. This allows
-            // the invoking application to remain deployable
-            // across the Universal Windows Platform.
-            if (null == gpio)
-            {
-                this.enable = false;
-                return this.enable;
-            }
-
-            // Acquire the I2C device
-            // MSDN I2C Reference: https://msdn.microsoft.com/en-us/library/windows/apps/windows.devices.i2c.aspx
-            //
-            // Use the I2cDevice device selector to create an advanced query syntax string
-            // Use the Windows.Devices.Enumeration.DeviceInformation class to create a collection using the advanced query syntax string
-            // Take the device id of the first device in the collection
-            string advancedQuerySyntax = I2cDevice.GetDeviceSelector("I2C1");
-            DeviceInformationCollection deviceInformationCollection = await DeviceInformation.FindAllAsync(advancedQuerySyntax);
-            string deviceId = deviceInformationCollection[0].Id;
-
-            // Establish an I2C connection to the HTU21D
-            //
-            // Instantiate the I2cConnectionSettings using the device address of the HTU21D
-            // - Set the I2C bus speed of connection to fast mode
-            // - Set the I2C sharing mode of the connection to shared
-            //
-            // Instantiate the the HTU21D I2C device using the device id and the I2cConnectionSettings
-            I2cConnectionSettings htu21dConnection = new I2cConnectionSettings(HTU21D.Htu21dI2cAddress);
-            htu21dConnection.BusSpeed = I2cBusSpeed.FastMode;
-            htu21dConnection.SharingMode = I2cSharingMode.Shared;
-
-            this.i2c = await I2cDevice.FromIdAsync(deviceId, htu21dConnection);
-
-            // Test to see if the I2C devices are available.
-            //
-            // If the I2C devices are not available, this is
-            // a good indicator the weather shield is either
-            // missing or configured incorrectly. Therefore we
-            // will disable the weather shield functionality to
-            // handle the failure case gracefully. This allows
-            // the invoking application to remain deployable
-            // across the Universal Windows Platform.
-            if (null == this.i2c)
-            {
-                this.enable = false;
-            }
-            else
-            {
-                byte[] i2cTemperatureData = new byte[3];
-
-                try
-                {
-                    this.i2c.WriteRead(new byte[] { HTU21D.SampleTemperatureHold }, i2cTemperatureData);
-                    this.enable = true;
-                }
-                catch
-                {
-                    this.enable = false;
-                }
-            }
-
-            return this.enable;
         }
     }
 }

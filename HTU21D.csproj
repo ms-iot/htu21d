@@ -7,8 +7,8 @@
     <ProjectGuid>{8C6D2EA6-A53F-4304-9DB0-853BC15CA436}</ProjectGuid>
     <OutputType>winmdobj</OutputType>
     <AppDesignerFolder>Properties</AppDesignerFolder>
-    <RootNamespace>Microsoft.Maker.Devices.I2C.HTU21DDevice</RootNamespace>
-    <AssemblyName>Microsoft.Maker.Devices.I2C.HTU21DDevice</AssemblyName>
+    <RootNamespace>Microsoft.Maker.Devices.I2C.Htu21d</RootNamespace>
+    <AssemblyName>Microsoft.Maker.Devices.I2C.Htu21d</AssemblyName>
     <DefaultLanguage>en-US</DefaultLanguage>
     <TargetPlatformIdentifier>UAP</TargetPlatformIdentifier>
     <TargetPlatformVersion>10.0.10240.0</TargetPlatformVersion>
@@ -108,7 +108,7 @@
     <None Include="project.json" />
   </ItemGroup>
   <ItemGroup>
-    <Compile Include="HTU21D.cs" />
+    <Compile Include="Htu21d.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>
   <ItemGroup>

@@ -1,6 +1,6 @@
 ﻿using System;
 using Windows.ApplicationModel.Background;
-using Microsoft.Maker.Devices.I2C.HTU21DDevice;
+using Microsoft.Maker.Devices.I2C.HTU21D;
 
 namespace HTU21DTest
 {
