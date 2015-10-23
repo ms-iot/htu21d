@@ -239,7 +239,7 @@ namespace Microsoft.Maker.Devices.I2C.Htu21d
                 // - byte 2 - CRC
                 //
                 // NOTE: Holding the line allows for a `WriteRead` style transaction
-                this.i2c.WriteRead(new byte[] { Htu21d.SampleHumidityHold }, i2cHumidityData);
+                //TODO: Add your code here. [HINT: uses same I2CDevice (htdu21d) as RawTemperature)]
 
                 // Reconstruct the result using the first two bytes returned from the device
                 //
@@ -248,8 +248,7 @@ namespace Microsoft.Maker.Devices.I2C.Htu21d
                 // - status bit 1
                 // -- off = temperature data
                 // -- on = humdity data
-                humidity = (ushort)(i2cHumidityData[0] << 8);
-                humidity |= (ushort)(i2cHumidityData[1] & 0xFC);
+                //TODO: Add your code here. [HINT: uses same I2CDevice (htdu21d) as RawTemperature)]
 
                 // Test the integrity of the data
                 //
@@ -257,17 +256,7 @@ namespace Microsoft.Maker.Devices.I2C.Htu21d
                 // Test cyclic redundancy check (CRC) byte
                 //
                 // WARNING: HTU21D firmware error - XOR CRC byte with 0x62 before attempting to validate
-                bool humidityData = 0x00 != (0x02 & i2cHumidityData[1]);
-                if (!humidityData)
-                {
-                    return 0;
-                }
-
-                bool validData = this.ValidCyclicRedundancyCheck(humidity, (byte)(i2cHumidityData[2] ^ 0x62));
-                if (!validData)
-                {
-                    return 0;
-                }
+                //TODO: Add your code here. [HINT: uses same I2CDevice (htdu21d) as RawTemperature)]
 
                 return humidity;
             }
